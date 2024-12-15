@@ -6,6 +6,6 @@ const videoSchema = new mongoose.Schema({
     size: { type: Number }
 });
 
-const Video = mongoose.model('Video123trial', videoSchema);
+const Video = mongoose.model('Video', videoSchema);
 
 module.exports = { Video };
