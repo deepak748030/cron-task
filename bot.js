@@ -57,7 +57,7 @@ const getAndUpdateCaptions = async () => {
                 - Only the movie/series name, no extra words or symbols.
                <b> Demon Slayer: Kimetsu no Yaiba - To the Hashira Training (2024) </b>
 ━━━━━━━━━━━━━━━━━━━━━━━━━━  
- Language: |  Quality:  |  Format:  | Codec:  |  S| File Type: and also add more make this for telegren dont use * star   
+ <b> Language:</b> |   <b> Quality:</b>  |  <b> Format:</b>  |<b> Codec:</b>  |  S|  <b>File Type:</b>
 ━━━━━━━━━━━━━━━━━━━━━━━━━━
 
                 Use proper spacing, fancy icons, and a clean, visually appealing design. Do not add any extra words or unnecessary details.
