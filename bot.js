@@ -55,10 +55,10 @@ const getAndUpdateCaptions = async () => {
 
                 Create a visually appealing video caption using the following format:
                 - Only the movie/series name, no extra words or symbols.
-               Demon Slayer: Kimetsu no Yaiba - To the Hashira Training (2024)  
-━━━━━━━━━━━━━━━━━━━━━━━━━━━  
+               Demon Slayer: Kimetsu no Yaiba - To the Hashira Training (2024) make this bold also for my telegram bot  
+━━━━━━━━━━━━━━━━━━━━━━━━━━  
  Language: |  Quality:  |  Format:  | Codec:  |  S| File Type: and also add more make this for telegren dont use * star   
-━━━━━━━━━━━━━━━━━━━━━━━━━━━
+━━━━━━━━━━━━━━━━━━━━━━━━━━
 
                 Use proper spacing, fancy icons, and a clean, visually appealing design. Do not add any extra words or unnecessary details.
             `;
