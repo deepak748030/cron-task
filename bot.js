@@ -55,14 +55,10 @@ const getAndUpdateCaptions = async () => {
 
                 Create a visually appealing video caption using the following format:
                 - Only the movie/series name, no extra words or symbols.
-                - ⭐ Rating: Include stars and IMDb rating.
-                - 🎭 Genre: Specify the category/genre.
-                - ⏱️ Duration: Include the duration.
-                - 🎬 S0/EP: Mention the episode and season if it's a series.
-                - 🗂️ Quality: Specify the video quality.
-                - 🗣️ Language: Mention the language.
-                - 📁 Format: Specify the file format.
-                - 🎬 Plot Summary: Keep it concise.
+               Demon Slayer: Kimetsu no Yaiba - To the Hashira Training (2024)  
+━━━━━━━━━━━━━━━━━━━━━━━━━━━  
+ Language: |  Quality:  |  Format:  | Codec:  |  S| File Type: and also add more make this for telegren dont use * star   
+━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
                 Use proper spacing, fancy icons, and a clean, visually appealing design. Do not add any extra words or unnecessary details.
             `;
