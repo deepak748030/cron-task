@@ -1,10 +1,8 @@
-// Import required modules
 const { Telegraf, Markup } = require('telegraf');
 const dotenv = require('dotenv');
 const mongoose = require('mongoose');
 const NodeCache = require('node-cache');
 const { Video } = require('./models/video'); // Assuming you have a Video model
-const { getChatCompletion } = require('./api/api-services');
 const ai = require('unlimited-ai');
 
 dotenv.config();
@@ -38,52 +36,75 @@ const connectToMongoDB = async () => {
     }
 };
 
+// Function to generate captions using AI
+const generateNewCaption = async (video) => {
+    const prompt = `
+        ${video.caption}
+
+        Create a visually appealing video caption using the following format:
+        - Only the movie/series name, no extra words or symbols.
+        <b> Demon Slayer: Kimetsu no Yaiba - To the Hashira Training (2024) </b>
+        ━━━━━━━━━━━━━━━━━━━━━━━━━━━  
+        <b> Language:</b> |   <b> Quality:</b>  |  <b> Format:</b>  |<b> Codec:</b>  |  S|  <b>File Type:</b>
+        ━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+        Use proper spacing, fancy icons, and a clean, visually appealing design. Do not add any extra words or unnecessary details.
+    `;
+    const model = 'gpt-4-turbo-2024-04-09';
+    const messages = [
+        { role: 'user', content: prompt },
+        { role: 'system', content: 'You are a movie/series data provider website.' }
+    ];
+
+    try {
+        // Generate new caption using AI
+        const newCaption = await ai.generate(model, messages);
+        return newCaption;
+    } catch (aiError) {
+        console.error('Error generating caption:', aiError);
+        return null;
+    }
+};
+
 // Fetch captions and update them
 const getAndUpdateCaptions = async () => {
     try {
         // Ensure the database connection
         await connectToMongoDB();
 
-        // Fetch all videos from the database
-        const videos = await Video.find();
+        // Fetch all videos in batches to avoid memory overload
+        const batchSize = 100; // Adjust as necessary based on your environment
+        let skip = 0;
+        let totalUpdated = 0;
 
-        // Iterate over all videos and generate new captions
-        for (const video of videos) {
-            const videoSize = video.size || 0; // Use video.size if available
-            const prompt = `
-                ${video.caption}
+        const totalVideos = await Video.countDocuments();
+        console.log(`Total videos to process: ${totalVideos}`);
 
-                Create a visually appealing video caption using the following format:
-                - Only the movie/series name, no extra words or symbols.
-               <b> Demon Slayer: Kimetsu no Yaiba - To the Hashira Training (2024) </b>
-━━━━━━━━━━━━━━━━━━━━━━━━━━  
- <b> Language:</b> |   <b> Quality:</b>  |  <b> Format:</b>  |<b> Codec:</b>  |  S|  <b>File Type:</b>
-━━━━━━━━━━━━━━━━━━━━━━━━━━
+        while (skip < totalVideos) {
+            // Fetch the next batch of videos
+            const videos = await Video.find().skip(skip).limit(batchSize);
 
-                Use proper spacing, fancy icons, and a clean, visually appealing design. Do not add any extra words or unnecessary details.
-            `;
-
-            const model = 'gpt-4-turbo-2024-04-09';
-            const messages = [
-                { role: 'user', content: prompt },
-                { role: 'system', content: 'You are a movie/series data provider website.' }
-            ];
-
-            try {
-                // Generate new caption using AI
-                const newCaption = await ai.generate(model, messages);
-
-                // Update the video document with the new caption
+            // Process each video in the batch
+            for (const video of videos) {
+                const newCaption = await generateNewCaption(video);
                 if (newCaption && typeof newCaption === 'string' && newCaption.trim().length > 0) {
+                    // Update the video document with the new caption
                     await Video.findByIdAndUpdate(video._id, { caption: newCaption }, { new: true });
                     console.log(`Updated caption for video ID ${video._id}:`, newCaption);
+                    totalUpdated++;
                 } else {
                     console.warn(`No valid caption generated for video ID ${video._id}`);
                 }
-            } catch (aiError) {
-                console.error(`Error generating caption for video ID ${video._id}:`, aiError);
             }
+
+            skip += batchSize;
+            console.log(`Processed ${skip} out of ${totalVideos} videos...`);
+
+            // Optional: You can introduce a delay between batches to avoid rate limiting
+            await new Promise(resolve => setTimeout(resolve, 2000)); // Delay 2 seconds between batches
         }
+
+        console.log(`Finished processing. Updated ${totalUpdated} video captions.`);
     } catch (dbError) {
         console.error('Error fetching or updating video data:', dbError);
     } finally {
@@ -96,6 +117,10 @@ const getAndUpdateCaptions = async () => {
 };
 
 // Run the function to fetch and update captions
-getAndUpdateCaptions();
+getAndUpdateCaptions().then(() => {
+    console.log('Captions update completed');
+}).catch(error => {
+    console.error('Error during caption update:', error);
+});
 
 module.exports = { getAndUpdateCaptions };
