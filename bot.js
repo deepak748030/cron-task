@@ -1,126 +1,140 @@
-const { Telegraf, Markup } = require('telegraf');
 const dotenv = require('dotenv');
 const mongoose = require('mongoose');
 const NodeCache = require('node-cache');
+const fs = require('fs');
+const path = require('path');
 const { Video } = require('./models/video'); // Assuming you have a Video model
 const ai = require('unlimited-ai');
 
 dotenv.config();
 
 // Initialize caches
-const cache = new NodeCache(); // Cache with default TTL
-const userCache = new NodeCache({ stdTTL: 86400 }); // User cache with 1-day TTL
+const cache = new NodeCache({ stdTTL: 86400 }); // Cache with 1-day TTL
 
-// Allowed admin usernames
-const allowedUsers = ["knox7489", "vixcasm", "Knoxbros"];
-
-let dbConnection;
-
-// Helper function to convert bytes to MB
-const bytesToMB = (bytes) => (bytes / (1024 * 1024)).toFixed(2);
+// File path for video backup
+const backupFilePath = path.join(__dirname, 'videoBackup.json');
 
 // MongoDB connection function
+let dbConnection;
+
 const connectToMongoDB = async () => {
     try {
         if (!dbConnection) {
             dbConnection = await mongoose.connect(process.env.MONGODB_URI, {
                 useNewUrlParser: true,
-                useUnifiedTopology: true
+                useUnifiedTopology: true,
             });
             console.log('Connected to MongoDB');
         }
         return dbConnection;
     } catch (err) {
         console.error('Failed to connect to MongoDB:', err);
-        process.exit(1); // Exit the process if the connection fails
+        process.exit(1); // Exit the process if connection fails
     }
 };
 
-// Function to generate captions using AI
+// Helper function to generate captions using AI
 const generateNewCaption = async (video) => {
     const prompt = `
         ${video.caption}
 
         Create a visually appealing video caption using the following format:
-        - Only the movie/series name, no extra words or symbols.
-        <b> Demon Slayer: Kimetsu no Yaiba - To the Hashira Training (2024) </b>
+        <b>${video.title}</b>  
         ━━━━━━━━━━━━━━━━━━━━━━━━━━━  
-        <b> Language:</b> |   <b> Quality:</b>  |  <b> Format:</b>  |<b> Codec:</b>  |  S|  <b>File Type:</b>
-        ━━━━━━━━━━━━━━━━━━━━━━━━━━━
+        <b>Language:</b> ${video.language} | <b>Quality:</b> ${video.quality} | <b>Format:</b> ${video.format} | <b>Codec:</b> ${video.codec} | <b>File Type:</b> ${video.fileType}  
+        ━━━━━━━━━━━━━━━━━━━━━━━━━━━  
 
-        Use proper spacing, fancy icons, and a clean, visually appealing design. Do not add any extra words or unnecessary details.
+        Use proper spacing, fancy icons, and a clean design.
     `;
     const model = 'gpt-4-turbo-2024-04-09';
     const messages = [
+        { role: 'system', content: 'You are a movie/series data formatting assistant.' },
         { role: 'user', content: prompt },
-        { role: 'system', content: 'You are a movie/series data provider website.' }
     ];
 
     try {
-        // Generate new caption using AI
         const newCaption = await ai.generate(model, messages);
-        return newCaption;
-    } catch (aiError) {
-        console.error('Error generating caption:', aiError);
+        return newCaption.trim();
+    } catch (err) {
+        console.error('Error generating caption:', err);
         return null;
     }
 };
 
-// Fetch captions and update them
-const getAndUpdateCaptions = async () => {
+// Function to backup video data to a file
+const backupVideoData = async () => {
     try {
-        // Ensure the database connection
-        await connectToMongoDB();
-
-        // Fetch all videos in batches to avoid memory overload
-        const batchSize = 100; // Adjust as necessary based on your environment
-        let skip = 0;
-        let totalUpdated = 0;
-
-        const totalVideos = await Video.countDocuments();
-        console.log(`Total videos to process: ${totalVideos}`);
-
-        while (skip < totalVideos) {
-            // Fetch the next batch of videos
-            const videos = await Video.find().skip(skip).limit(batchSize);
-
-            // Process each video in the batch
-            for (const video of videos) {
-                const newCaption = await generateNewCaption(video);
-                if (newCaption && typeof newCaption === 'string' && newCaption.trim().length > 0) {
-                    // Update the video document with the new caption
-                    await Video.findByIdAndUpdate(video._id, { caption: newCaption }, { new: true });
-                    console.log(`Updated caption for video ID ${video._id}:`, newCaption);
-                    totalUpdated++;
-                } else {
-                    console.warn(`No valid caption generated for video ID ${video._id}`);
-                }
-            }
-
-            skip += batchSize;
-            console.log(`Processed ${skip} out of ${totalVideos} videos...`);
-
-            // Optional: You can introduce a delay between batches to avoid rate limiting
-            await new Promise(resolve => setTimeout(resolve, 2000)); // Delay 2 seconds between batches
-        }
-
-        console.log(`Finished processing. Updated ${totalUpdated} video captions.`);
-    } catch (dbError) {
-        console.error('Error fetching or updating video data:', dbError);
-    } finally {
-        // Ensure the database connection is closed
-        if (dbConnection) {
-            mongoose.connection.close();
-            console.log('Database connection closed');
-        }
+        const allVideos = await Video.find();
+        fs.writeFileSync(backupFilePath, JSON.stringify(allVideos, null, 2));
+        console.log(`Video data backup saved to ${backupFilePath}`);
+    } catch (err) {
+        console.error('Failed to backup video data:', err);
     }
 };
 
-// Run the function to fetch and update captions
-getAndUpdateCaptions().then(() => {
-    console.log('Captions update completed');
-}).catch(error => {
-    console.error('Error during caption update:', error);
-});
+// Function to load videos into cache
+const loadVideosToCache = async () => {
+    try {
+        const allVideos = await Video.find();
+        allVideos.forEach((video) => {
+            cache.set(video._id.toString(), video);
+        });
+        console.log(`Loaded ${allVideos.length} videos into cache.`);
+    } catch (err) {
+        console.error('Failed to load videos into cache:', err);
+    }
+};
 
-module.exports = { getAndUpdateCaptions };
+// Function to update captions one by one using AI
+const updateCaptions = async () => {
+    try {
+        await connectToMongoDB();
+        const keys = cache.keys();
+
+        for (const key of keys) {
+            const video = cache.get(key);
+
+            if (!video) {
+                console.warn(`Video with ID ${key} not found in cache.`);
+                continue;
+            }
+
+            console.log(`Processing video ID: ${video._id}`);
+
+            const newCaption = await generateNewCaption(video);
+
+            if (newCaption) {
+                await Video.findByIdAndUpdate(video._id, { caption: newCaption }, { new: true });
+                cache.set(video._id.toString(), { ...video, caption: newCaption }); // Update cache
+                console.log(`Updated caption for video ID ${video._id}`);
+            } else {
+                console.warn(`Failed to generate a caption for video ID ${video._id}`);
+            }
+
+            // Optional delay between updates
+            await new Promise((resolve) => setTimeout(resolve, 2000)); // 2 seconds delay
+        }
+        console.log('Finished updating captions.');
+    } catch (err) {
+        console.error('Error while updating captions:', err);
+    }
+};
+
+// Scheduled task: Run at regular intervals
+const startCaptionUpdater = () => {
+    setInterval(async () => {
+        console.log('Starting caption update task...');
+        await updateCaptions();
+        console.log('Caption update task completed.');
+    }, 60 * 60 * 1000); // Runs every 1 hour
+};
+
+// Main function to initialize everything
+const main = async () => {
+    await connectToMongoDB();
+    await backupVideoData();
+    await loadVideosToCache();
+    startCaptionUpdater();
+};
+
+main().catch((err) => console.error('Error in main execution:', err));
