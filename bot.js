@@ -8,13 +8,13 @@ const ai = require('unlimited-ai');
 
 dotenv.config();
 
-// Initialize caches
-const cache = new NodeCache({ stdTTL: 86400 }); // Cache with 1-day TTL
+// Initialize cache
+const cache = new NodeCache({ stdTTL: 86400 }); // 1-day TTL for cache
 
 // File path for video backup
 const backupFilePath = path.join(__dirname, 'videoBackup.json');
 
-// MongoDB connection function
+// MongoDB connection
 let dbConnection;
 
 const connectToMongoDB = async () => {
@@ -29,7 +29,7 @@ const connectToMongoDB = async () => {
         return dbConnection;
     } catch (err) {
         console.error('Failed to connect to MongoDB:', err);
-        process.exit(1); // Exit the process if connection fails
+        process.exit(1);
     }
 };
 
@@ -46,50 +46,49 @@ const generateNewCaption = async (video) => {
 
         Use proper spacing, fancy icons, and a clean design.
     `;
-    const model = 'gpt-4-turbo-2024-04-09';
-    const messages = [
-        { role: 'system', content: 'You are a movie/series data formatting assistant.' },
-        { role: 'user', content: prompt },
-    ];
-
     try {
-        const newCaption = await ai.generate(model, messages);
-        return newCaption.trim();
+        const response = await ai.generate('gpt-4-turbo-2024-04-09', [
+            { role: 'system', content: 'You are a movie/series caption assistant.' },
+            { role: 'user', content: prompt },
+        ]);
+        if (response && response.trim()) {
+            return response.trim();
+        }
+        console.warn('Empty caption generated for video:', video._id);
+        return null;
     } catch (err) {
-        console.error('Error generating caption:', err);
+        console.error('AI error while generating caption:', err);
         return null;
     }
 };
 
-// Function to backup video data to a file
+// Backup videos to file
 const backupVideoData = async () => {
     try {
         const allVideos = await Video.find();
         fs.writeFileSync(backupFilePath, JSON.stringify(allVideos, null, 2));
-        console.log(`Video data backup saved to ${backupFilePath}`);
+        console.log(`Video data backed up to ${backupFilePath}`);
     } catch (err) {
         console.error('Failed to backup video data:', err);
     }
 };
 
-// Function to load videos into cache
+// Load videos into cache
 const loadVideosToCache = async () => {
     try {
         const allVideos = await Video.find();
-        allVideos.forEach((video) => {
-            cache.set(video._id.toString(), video);
-        });
+        allVideos.forEach((video) => cache.set(video._id.toString(), video));
         console.log(`Loaded ${allVideos.length} videos into cache.`);
     } catch (err) {
-        console.error('Failed to load videos into cache:', err);
+        console.error('Error loading videos into cache:', err);
     }
 };
 
-// Function to update captions one by one using AI
+// Update captions and sync with MongoDB
 const updateCaptions = async () => {
     try {
-        await connectToMongoDB();
         const keys = cache.keys();
+        console.log(`Starting to update captions for ${keys.length} videos...`);
 
         for (const key of keys) {
             const video = cache.get(key);
@@ -99,41 +98,54 @@ const updateCaptions = async () => {
                 continue;
             }
 
-            console.log(`Processing video ID: ${video._id}`);
-
+            console.log(`Generating caption for video ID: ${video._id}`);
             const newCaption = await generateNewCaption(video);
 
             if (newCaption) {
-                await Video.findByIdAndUpdate(video._id, { caption: newCaption }, { new: true });
-                cache.set(video._id.toString(), { ...video, caption: newCaption }); // Update cache
-                console.log(`Updated caption for video ID ${video._id}`);
+                // Update MongoDB
+                const updatedVideo = await Video.findByIdAndUpdate(
+                    video._id,
+                    { caption: newCaption },
+                    { new: true }
+                );
+
+                if (updatedVideo) {
+                    // Update cache
+                    cache.set(video._id.toString(), { ...updatedVideo._doc });
+                    console.log(`Caption updated for video ID: ${video._id}`);
+                } else {
+                    console.warn(`Failed to update caption in DB for video ID: ${video._id}`);
+                }
             } else {
-                console.warn(`Failed to generate a caption for video ID ${video._id}`);
+                console.warn(`No valid caption generated for video ID: ${video._id}`);
             }
 
-            // Optional delay between updates
-            await new Promise((resolve) => setTimeout(resolve, 2000)); // 2 seconds delay
+            // Optional delay
+            await new Promise((resolve) => setTimeout(resolve, 1000));
         }
+
         console.log('Finished updating captions.');
     } catch (err) {
-        console.error('Error while updating captions:', err);
+        console.error('Error updating captions:', err);
     }
 };
 
-// Scheduled task: Run at regular intervals
+// Schedule updates every hour
 const startCaptionUpdater = () => {
+    console.log('Starting caption updater interval...');
     setInterval(async () => {
-        console.log('Starting caption update task...');
+        console.log('Running caption update task...');
         await updateCaptions();
-        console.log('Caption update task completed.');
+        console.log('Caption update task finished.');
     }, 60 * 60 * 1000); // Runs every 1 hour
 };
 
-// Main function to initialize everything
+// Main function
 const main = async () => {
     await connectToMongoDB();
     await backupVideoData();
     await loadVideosToCache();
+    await updateCaptions(); // Initial run
     startCaptionUpdater();
 };
 
